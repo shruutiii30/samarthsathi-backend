@@ -117,9 +117,35 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=401, detail="Invalid token")
 
 # Routes
+# @api_router.post("/auth/register")
+# async def register(user_data: UserRegister):
+#     # Check if mobile already exists
+#     existing = await db.users.find_one({"mobile": user_data.mobile})
+#     if existing:
+#         raise HTTPException(status_code=400, detail="Mobile number already registered")
+    
+#     user = User(
+#         name=user_data.name,
+#         mobile=user_data.mobile,
+#         language=user_data.language,
+#         gender=user_data.gender
+#     )
+    
+#     doc = user.model_dump()
+#     doc['password_hash'] = hash_password(user_data.password)
+#     # store created_at as ISO string for consistency
+#     doc['created_at'] = doc['created_at'].isoformat()
+    
+#     await db.users.insert_one(doc)
+    
+#     token = create_token(user.id, user.mobile)
+#     # return stored document without password
+#     user_return = doc.copy()
+#     user_return.pop('password_hash', None)
+#     return {"token": token, "user": user_return}
+
 @api_router.post("/auth/register")
 async def register(user_data: UserRegister):
-    # Check if mobile already exists
     existing = await db.users.find_one({"mobile": user_data.mobile})
     if existing:
         raise HTTPException(status_code=400, detail="Mobile number already registered")
@@ -133,16 +159,20 @@ async def register(user_data: UserRegister):
     
     doc = user.model_dump()
     doc['password_hash'] = hash_password(user_data.password)
-    # store created_at as ISO string for consistency
     doc['created_at'] = doc['created_at'].isoformat()
-    
+
+    # Force MongoDB to use UUID instead of ObjectId
+    doc['_id'] = doc['id']
+
     await db.users.insert_one(doc)
-    
+
     token = create_token(user.id, user.mobile)
-    # return stored document without password
-    user_return = doc.copy()
-    user_return.pop('password_hash', None)
+
+    # clean return object
+    user_return = {k: v for k, v in doc.items() if k not in ('password_hash', '_id')}
+
     return {"token": token, "user": user_return}
+
 
 @api_router.post("/auth/login")
 async def login(credentials: UserLogin):
@@ -161,7 +191,8 @@ async def save_interaction(interaction: InteractionCreate, user=Depends(get_curr
     doc = interaction_obj.model_dump()
     doc['timestamp'] = doc['timestamp'].isoformat()
     
-    await db.interactions.insert_one(doc)
+    await db.interactions.insert_one({**doc, "_id": user.id})
+
     return {"success": True, "interaction_id": interaction_obj.id}
 
 class FormFieldResponse(BaseModel):
